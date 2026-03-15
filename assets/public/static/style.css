@@ -1337,6 +1337,10 @@ li {
 
 	.left-rail-sticky {
 		position: static;
+		height: auto;
+		min-height: 0;
+		overflow: visible;
+		overscroll-behavior: auto;
 		padding: 8px 12px;
 		display: flex;
 		align-items: center;
