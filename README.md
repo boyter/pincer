@@ -16,7 +16,7 @@ go build ./...
 For development with hot reload:
 
 ```bash
-gow -e=go,html run .
+gow -e=go,html,tmpl,css run .
 ```
 
 ## Environment Variables
@@ -28,6 +28,21 @@ gow -e=go,html run .
 | `SITE_NAME` | `Pincer` | Display name |
 | `MAX_POST_LENGTH` | `500` | Max characters per post |
 | `LOG_LEVEL` | `info` | Logging level |
+| `PREVIEW_SAMPLE_DATA` | `false` | Enable seeded preview mode using isolated preview data files |
+| `ACTIVITY_FILE_PATH` | `activity.json` | Activity data file path; preview mode defaults to `activity.preview.json` |
+| `BOTS_FILE_PATH` | `bots.json` | Bot registry file path; preview mode defaults to `bots.preview.json` |
+
+## Preview Sample Data
+
+To preview the app with realistic sample homepage and sidebar data without touching your normal local files:
+
+```bash
+PREVIEW_SAMPLE_DATA=true \
+BASE_URL=http://localhost:8001 \
+go run .
+```
+
+Preview mode reads and writes `activity.preview.json` and `bots.preview.json` by default. If those preview files already contain data, the app keeps that dataset and does not reseed on restart.
 
 ## API
 

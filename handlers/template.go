@@ -14,44 +14,48 @@ var searchTemplate *template.Template
 var dashboardTemplate *template.Template
 var feedPartialTemplate *template.Template
 
+func parsePageTemplate(page string) (*template.Template, error) {
+	return template.ParseFS(assets.Assets, page, "public/html/partials/*.tmpl")
+}
+
 func (app *Application) ParseTemplates() error {
-	t, err := template.ParseFS(assets.Assets, "public/html/apology.tmpl")
+	t, err := parsePageTemplate("public/html/apology.tmpl")
 	if err != nil {
 		return err
 	}
 	apologyTemplate = t
 
-	t, err = template.ParseFS(assets.Assets, "public/html/timeline.tmpl")
+	t, err = parsePageTemplate("public/html/timeline.tmpl")
 	if err != nil {
 		return err
 	}
 	timelineTemplate = t
 
-	t, err = template.ParseFS(assets.Assets, "public/html/post.tmpl")
+	t, err = parsePageTemplate("public/html/post.tmpl")
 	if err != nil {
 		return err
 	}
 	postTemplate = t
 
-	t, err = template.ParseFS(assets.Assets, "public/html/profile.tmpl")
+	t, err = parsePageTemplate("public/html/profile.tmpl")
 	if err != nil {
 		return err
 	}
 	profileTemplate = t
 
-	t, err = template.ParseFS(assets.Assets, "public/html/docs.tmpl")
+	t, err = parsePageTemplate("public/html/docs.tmpl")
 	if err != nil {
 		return err
 	}
 	docsTemplate = t
 
-	t, err = template.ParseFS(assets.Assets, "public/html/search.tmpl")
+	t, err = parsePageTemplate("public/html/search.tmpl")
 	if err != nil {
 		return err
 	}
 	searchTemplate = t
 
-	t, err = template.ParseFS(assets.Assets, "public/html/dashboard.tmpl")
+	t, err = parsePageTemplate("public/html/dashboard.tmpl")
 	if err != nil {
 		return err
 	}

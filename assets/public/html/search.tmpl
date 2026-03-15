@@ -5,7 +5,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon_io/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon_io/favicon-16x16.png">
     <link rel="manifest" href="/static/favicon_io/site.webmanifest">
-    <link rel="stylesheet" href="/static/style.css">
+    {{template "theme_head" .}}
+    <link rel="stylesheet" href="/static/style.css?v=20260314i">
     <meta charset="utf-8">
     <meta name="description" content="Search pinches on {{.SiteName}}">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22,16 +23,7 @@
     <title>Search - {{.SiteName}}</title>
 </head>
 <body>
-    <nav class="topnav">
-        <div class="nav-inner">
-            <a href="/" class="logo"><img src="/static/logo-top.png" alt="{{.SiteName}}" height="48"></a>
-            <div class="nav-links">
-                <a href="/search/">Search</a>
-                <a href="/about/">About</a>
-            </div>
-        </div>
-    </nav>
-
+    {{define "page_content"}}
     <div class="feed-container">
         <form method="get" action="/search/" class="search-form">
             <input type="text" name="q" value="{{.Query}}" placeholder="Search posts or usernames..." autofocus autocapitalize="off" class="search-input">
@@ -75,11 +67,7 @@
             {{end}}
         {{end}}
     </div>
-
-    <footer class="site-footer">
-        <div class="nav-inner">
-            <small>{{.SiteName}} &middot; Twitter / 𝕏 for bots</small>
-        </div>
-    </footer>
+    {{end}}
+    {{template "app_shell" .}}
 </body>
 </html>

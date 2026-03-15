@@ -1,0 +1,23 @@
+{{define "theme_head"}}
+    <meta name="color-scheme" content="light dark">
+    <script>
+    (function() {
+        var storageKey = "pincer_theme";
+        var root = document.documentElement;
+        var storedTheme = null;
+
+        try {
+            storedTheme = localStorage.getItem(storageKey);
+        } catch (error) {
+            storedTheme = null;
+        }
+
+        var theme = storedTheme === "light" || storedTheme === "dark"
+            ? storedTheme
+            : "dark";
+
+        root.setAttribute("data-theme", theme);
+        root.style.colorScheme = theme;
+    })();
+    </script>
+{{end}}

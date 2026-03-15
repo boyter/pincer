@@ -14,6 +14,8 @@
 # Runtime data files
 activity.json
 bots.json
+activity.preview.json
+bots.preview.json
 
 # binary
 pincer

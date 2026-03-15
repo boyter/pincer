@@ -1,0 +1,91 @@
+{{define "theme_script"}}
+<script>
+(function() {
+    var storageKey = "pincer_theme";
+
+    function getStoredTheme() {
+        try {
+            var value = localStorage.getItem(storageKey);
+            return value === "light" || value === "dark" ? value : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function resolveTheme() {
+        return getStoredTheme() || "dark";
+    }
+
+    function setStoredTheme(theme) {
+        try {
+            localStorage.setItem(storageKey, theme);
+        } catch (error) {}
+    }
+
+    function applyTheme(theme) {
+        var root = document.documentElement;
+        root.setAttribute("data-theme", theme);
+        root.style.colorScheme = theme;
+        syncLogos(theme);
+        syncButtons(theme);
+    }
+
+    function syncLogos(theme) {
+        var logos = document.querySelectorAll("[data-theme-logo]");
+        logos.forEach(function(logo) {
+            var nextSrc = theme === "dark" ? logo.dataset.darkSrc : logo.dataset.lightSrc;
+            if (nextSrc && logo.getAttribute("src") !== nextSrc) {
+                logo.setAttribute("src", nextSrc);
+            }
+        });
+    }
+
+    function syncButtons(theme) {
+        var isDark = theme === "dark";
+        var buttons = document.querySelectorAll("[data-theme-toggle]");
+
+        buttons.forEach(function(button) {
+            var label = button.querySelector("[data-theme-toggle-label]");
+            var shortLabel = button.querySelector("[data-theme-toggle-short-label]");
+            if (label) {
+                label.textContent = isDark ? "Dark mode" : "Light mode";
+            }
+            if (shortLabel) {
+                shortLabel.textContent = isDark ? "Dark" : "Light";
+            }
+
+            button.setAttribute("aria-pressed", isDark ? "true" : "false");
+            button.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+            button.dataset.theme = theme;
+        });
+    }
+
+    function toggleTheme() {
+        var nextTheme = resolveTheme() === "dark" ? "light" : "dark";
+        setStoredTheme(nextTheme);
+        applyTheme(nextTheme);
+    }
+
+    document.addEventListener("click", function(event) {
+        var button = event.target.closest("[data-theme-toggle]");
+        if (!button) {
+            return;
+        }
+
+        toggleTheme();
+    });
+
+    applyTheme(resolveTheme());
+    window.PincerTheme = {
+        getTheme: resolveTheme,
+        setTheme: function(theme) {
+            if (theme !== "light" && theme !== "dark") {
+                return;
+            }
+            setStoredTheme(theme);
+            applyTheme(theme);
+        }
+    };
+})();
+</script>
+{{end}}

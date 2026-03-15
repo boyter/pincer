@@ -16,9 +16,6 @@ import (
 	"time"
 )
 
-const botsFile = "bots.json"
-const activityFile = "activity.json"
-
 const (
 	MaxUserActivityLength = 1_000
 	MaxActivityLength     = 100_000
@@ -40,10 +37,10 @@ type Service struct {
 	ApiKeyIndex            map[string]string
 	BozoBannedUsers        map[string]bool
 	UserPostTimestamps     map[string][]int64
-	SearchCount        int64
-	ApiRequests        int64
-	botsSaveMutex      sync.Mutex
-	activitySaveMutex  sync.Mutex
+	SearchCount            int64
+	ApiRequests            int64
+	botsSaveMutex          sync.Mutex
+	activitySaveMutex      sync.Mutex
 }
 
 func NewService(environment *common.Environment) (*Service, error) {
@@ -90,18 +87,18 @@ func (s *Service) IncrementApiRequests() {
 }
 
 type DashboardStats struct {
-	TotalPosts         int
-	TotalBots          int
-	TotalFollows       int
-	TotalUsers         int
-	SearchCount        int64
-	ApiRequests        int64
-	PostsLastMinute    int
-	PostsLast5Minutes  int
-	PostsLastHour      int
-	PostsLast24Hours   int
-	UptimeSeconds      int64
-	TopPosters         []PosterStat
+	TotalPosts        int
+	TotalBots         int
+	TotalFollows      int
+	TotalUsers        int
+	SearchCount       int64
+	ApiRequests       int64
+	PostsLastMinute   int
+	PostsLast5Minutes int
+	PostsLastHour     int
+	PostsLast24Hours  int
+	UptimeSeconds     int64
+	TopPosters        []PosterStat
 }
 
 type PosterStat struct {
@@ -996,7 +993,7 @@ func (s *Service) SaveBots() {
 	s.botsSaveMutex.Lock()
 	defer s.botsSaveMutex.Unlock()
 
-	tmp, err := os.CreateTemp(".", botsFile+".tmp.*")
+	tmp, err := os.CreateTemp(".", tempPrefixForPath(s.Environment.BotsFilePath)+".tmp.*")
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "d6e7f8a9").Err(err).Msg("error creating temp bots file")
 		return
@@ -1012,14 +1009,14 @@ func (s *Service) SaveBots() {
 		return
 	}
 
-	if err = os.Rename(tmp.Name(), botsFile); err != nil {
+	if err = os.Rename(tmp.Name(), s.Environment.BotsFilePath); err != nil {
 		log.Error().Str(common.UniqueCode, "f8a9b1c2").Err(err).Msg("error renaming temp bots file")
 		os.Remove(tmp.Name())
 	}
 }
 
 func (s *Service) LoadBots() {
-	b, err := os.ReadFile(botsFile)
+	b, err := os.ReadFile(s.Environment.BotsFilePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			log.Error().Str(common.UniqueCode, "e7f8a9b0").Err(err).Msg("error reading bots file")
@@ -1048,9 +1045,9 @@ func (s *Service) LoadBots() {
 }
 
 type activitySnapshot struct {
-	LocalActivity []ActivityObject            `json:"local_activity"`
-	UserActivity  map[string]*ActivityUser    `json:"user_activity"`
-	TotalActivity int64                       `json:"total_activity"`
+	LocalActivity []ActivityObject         `json:"local_activity"`
+	UserActivity  map[string]*ActivityUser `json:"user_activity"`
+	TotalActivity int64                    `json:"total_activity"`
 }
 
 func (s *Service) SaveActivity() {
@@ -1072,7 +1069,7 @@ func (s *Service) SaveActivity() {
 	s.activitySaveMutex.Lock()
 	defer s.activitySaveMutex.Unlock()
 
-	tmp, err := os.CreateTemp(".", activityFile+".tmp.*")
+	tmp, err := os.CreateTemp(".", tempPrefixForPath(s.Environment.ActivityFilePath)+".tmp.*")
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "b2c3d4e6").Err(err).Msg("error creating temp activity file")
 		return
@@ -1088,7 +1085,7 @@ func (s *Service) SaveActivity() {
 		return
 	}
 
-	if err = os.Rename(tmp.Name(), activityFile); err != nil {
+	if err = os.Rename(tmp.Name(), s.Environment.ActivityFilePath); err != nil {
 		log.Error().Str(common.UniqueCode, "d4e5f6a8").Err(err).Msg("error renaming temp activity file")
 		os.Remove(tmp.Name())
 		return
@@ -1098,7 +1095,7 @@ func (s *Service) SaveActivity() {
 }
 
 func (s *Service) LoadActivity() {
-	b, err := os.ReadFile(activityFile)
+	b, err := os.ReadFile(s.Environment.ActivityFilePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			log.Error().Str(common.UniqueCode, "f6a7b8c0").Err(err).Msg("error reading activity file")
@@ -1118,4 +1115,12 @@ func (s *Service) LoadActivity() {
 	s.TotalActivity = snapshot.TotalActivity
 
 	log.Info().Str(common.UniqueCode, "b8c9d0e2").Int("posts", len(s.LocalActivity)).Msg("loaded activity from disk")
+}
+
+func tempPrefixForPath(path string) string {
+	lastSlash := strings.LastIndex(path, string(os.PathSeparator))
+	if lastSlash == -1 {
+		return path
+	}
+	return path[lastSlash+1:]
 }
