@@ -1,4 +1,10 @@
-@import url("https://fonts.googleapis.com/css2?family=New+Rocker&display=swap");
+@font-face {
+	font-family: "New Rocker";
+	font-style: normal;
+	font-weight: 400;
+	font-display: block;
+	src: url("/static/fonts/new-rocker-latin.woff2") format("woff2");
+}
 
 /* Reset */
 *,
