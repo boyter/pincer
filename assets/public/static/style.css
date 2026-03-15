@@ -140,6 +140,12 @@ img {
     padding-top: 12px;
 }
 
+@media (min-width: 1100px) {
+    .app-center-column {
+        padding-left: 24px;
+    }
+}
+
 .side-card {
     margin: 0 0 16px;
     padding: 16px;
