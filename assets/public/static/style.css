@@ -81,6 +81,10 @@ img {
     transition: background-color 0.15s ease, color 0.15s ease;
 }
 
+.rail-brand {
+    padding: 8px;
+}
+
 .rail-brand:hover,
 .rail-nav-link:hover {
     background: rgba(15, 20, 25, 0.08);
@@ -96,15 +100,15 @@ img {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 64px;
+    height: 64px;
     flex-shrink: 0;
 }
 
 .rail-brand-mark img {
     display: block;
-    width: 32px;
-    height: 32px;
+    width: 64px;
+    height: 64px;
 }
 
 .rail-nav {
