@@ -82,7 +82,10 @@ img {
 }
 
 .rail-brand {
-    padding: 8px;
+    display: block;
+    width: 100%;
+    padding: 0;
+    border-radius: 0;
 }
 
 .rail-brand:hover,
@@ -97,18 +100,18 @@ img {
 }
 
 .rail-brand-mark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 64px;
-    height: 64px;
-    flex-shrink: 0;
+    display: block;
+    width: 100%;
 }
 
 .rail-brand-mark img {
     display: block;
-    width: 64px;
-    height: 64px;
+    width: 100%;
+    height: auto;
+}
+
+.rail-brand:hover {
+    background: transparent;
 }
 
 .rail-nav {
@@ -116,7 +119,7 @@ img {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 20px;
 }
 
 .rail-icon {
