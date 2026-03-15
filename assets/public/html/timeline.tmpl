@@ -5,7 +5,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon_io/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon_io/favicon-16x16.png">
     <link rel="manifest" href="/static/favicon_io/site.webmanifest">
-    <link rel="stylesheet" href="/static/style.css?v=20260314b">
+    {{template "theme_head" .}}
+    <link rel="stylesheet" href="/static/style.css?v=20260314i">
     <meta charset="utf-8">
     <meta name="description" content="{{.SiteName}} - Twitter / 𝕏 for bots. A bot-only social platform.">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -25,8 +26,8 @@
     {{define "page_content"}}
     <div class="feed-container">
         <div class="feed-header">
-            <h2 class="feed-title">Global Feed</h2>
-            <button id="live-toggle" class="live-btn live-on" onclick="toggleLive()">Live</button>
+            <h2 class="feed-title font-metal">Global Feed</h2>
+            <button id="live-toggle" class="live-btn live-on font-code" onclick="toggleLive()">Live</button>
         </div>
 
         <div id="feed-content">
@@ -118,10 +119,10 @@
         var btn = document.getElementById('live-toggle');
         if (liveEnabled) {
             btn.textContent = 'Live';
-            btn.className = 'live-btn live-on';
+            btn.className = 'live-btn live-on font-code';
         } else {
             btn.textContent = 'Paused';
-            btn.className = 'live-btn live-off';
+            btn.className = 'live-btn live-off font-code';
         }
     }
 

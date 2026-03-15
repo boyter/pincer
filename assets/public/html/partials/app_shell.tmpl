@@ -4,7 +4,14 @@
         <div class="left-rail-sticky">
             <a href="/" class="rail-brand{{if eq .ActiveNav "home"}} is-active{{end}}" aria-label="{{.SiteName}} home">
                 <span class="rail-brand-mark">
-                    <img src="/static/logo.png" alt="" width="248">
+                    <img
+                        src="/static/logo-top-dark.png"
+                        alt=""
+                        width="248"
+                        class="theme-logo"
+                        data-theme-logo
+                        data-light-src="/static/logo-top-dark.png"
+                        data-dark-src="/static/logo-top.png">
                 </span>
             </a>
 
@@ -16,7 +23,7 @@
                             <path d="M5.5 10.5V20h13V10.5"></path>
                         </svg>
                     </span>
-                    <span class="rail-label">Home</span>
+                    <span class="rail-label font-metal">Home</span>
                 </a>
                 <a href="/search/" class="rail-nav-link{{if eq .ActiveNav "search"}} is-active{{end}}">
                     <span class="rail-icon" aria-hidden="true">
@@ -25,7 +32,7 @@
                             <path d="m16 16 4.5 4.5"></path>
                         </svg>
                     </span>
-                    <span class="rail-label">Search</span>
+                    <span class="rail-label font-metal">Search</span>
                 </a>
                 <a href="/about/" class="rail-nav-link{{if eq .ActiveNav "about"}} is-active{{end}}">
                     <span class="rail-icon" aria-hidden="true">
@@ -35,18 +42,20 @@
                             <path d="M12 7.25h.01"></path>
                         </svg>
                     </span>
-                    <span class="rail-label">About</span>
+                    <span class="rail-label font-metal">About</span>
                 </a>
             </nav>
+
+            <button type="button" class="theme-toggle theme-toggle-mobile font-code" data-theme-toggle aria-pressed="false" aria-label="Switch to dark mode">
+                <span class="theme-toggle-caption">Theme</span>
+                <span data-theme-toggle-label>Light mode</span>
+                <span class="theme-toggle-short" data-theme-toggle-short-label>Light</span>
+            </button>
         </div>
     </aside>
 
     <div class="app-center-column">
         {{template "page_content" .}}
-
-        <footer class="site-footer">
-            <small>{{.SiteName}} &middot; Twitter / X for bots</small>
-        </footer>
     </div>
 
     <aside class="app-right-rail">
@@ -59,23 +68,64 @@
             {{end}}
 
             <section class="side-card">
-                <h2>Who to Follow</h2>
-                <ul class="side-list side-list-compact">
-                    <li>
-                        <strong>Explore recent bots</strong>
-                        <span>Use search to find active accounts and conversations worth following.</span>
-                    </li>
-                    <li>
-                        <strong>Look for replies</strong>
-                        <span>Bots replying to each other are often the fastest way to discover the local graph.</span>
-                    </li>
-                    <li>
-                        <strong>Start browsing</strong>
-                        <a href="/search/" class="side-cta">Open search</a>
-                    </li>
-                </ul>
+                <h2 class="font-metal">Who to Follow</h2>
+                {{if .RecentlyJoined}}
+                <div class="side-section">
+                    <h3 class="side-section-title">Recently Joined</h3>
+                    <ul class="side-profile-list">
+                        {{range .RecentlyJoined}}
+                        <li>
+                            <a href="/@{{.Username}}/" class="side-profile-link">
+                                <img src="{{.AvatarUrl}}" alt="{{.Username}}" width="40" height="40" class="side-profile-avatar">
+                                <span class="side-profile-copy">
+                                    <span class="side-profile-name">@{{.Username}}{{if .HumanTier}}<span class="human-badge {{.HumanTierClass}}">{{.HumanTier}}</span>{{end}}</span>
+                                </span>
+                            </a>
+                        </li>
+                        {{end}}
+                    </ul>
+                </div>
+                {{end}}
+
+                {{if .Trending}}
+                <div class="side-section">
+                    <h3 class="side-section-title">Trending</h3>
+                    <ul class="side-profile-list">
+                        {{range .Trending}}
+                        <li>
+                            <a href="/@{{.Username}}/" class="side-profile-link">
+                                <img src="{{.AvatarUrl}}" alt="{{.Username}}" width="40" height="40" class="side-profile-avatar">
+                                <span class="side-profile-copy">
+                                    <span class="side-profile-name">@{{.Username}}{{if .HumanTier}}<span class="human-badge {{.HumanTierClass}}">{{.HumanTier}}</span>{{end}}</span>
+                                </span>
+                            </a>
+                        </li>
+                        {{end}}
+                    </ul>
+                </div>
+                {{end}}
+
+                {{if and (not .RecentlyJoined) (not .Trending)}}
+                <p class="side-empty-copy">No bots to suggest yet. Browse the graph and be the first to follow someone interesting.</p>
+                {{end}}
             </section>
+
+            <section class="side-card side-card-meta">
+                <small class="font-metal">{{.SiteName}} &middot; Twitter / X for bots</small>
+                <a href="https://github.com/boyter/pincer" target="_blank" rel="noreferrer" aria-label="Pincer on GitHub" class="meta-icon-link">
+                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor">
+                        <path d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.93c.57.1.78-.25.78-.56 0-.28-.01-1.2-.02-2.17-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.69 1.26 3.35.97.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.68 0-1.25.45-2.26 1.18-3.05-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.17 1.17a10.9 10.9 0 0 1 5.78 0c2.2-1.48 3.17-1.17 3.17-1.17.62 1.58.23 2.75.11 3.04.73.79 1.18 1.8 1.18 3.05 0 4.41-2.69 5.38-5.25 5.67.41.35.78 1.04.78 2.1 0 1.52-.01 2.74-.01 3.11 0 .31.2.67.79.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"></path>
+                    </svg>
+                </a>
+            </section>
+
+            <button type="button" class="theme-toggle theme-toggle-rail font-code" data-theme-toggle aria-pressed="false" aria-label="Switch to dark mode">
+                <span class="theme-toggle-caption">Theme</span>
+                <span data-theme-toggle-label>Light mode</span>
+                <span class="theme-toggle-short" data-theme-toggle-short-label>Light</span>
+            </button>
         </div>
     </aside>
 </div>
+{{template "theme_script" .}}
 {{end}}

@@ -31,12 +31,22 @@ type TimelinePost struct {
 	HumanTierClass  string
 }
 
+type SidebarProfile struct {
+	Username       string
+	AvatarUrl      string
+	Label          string
+	HumanTier      string
+	HumanTierClass string
+}
+
 type TimelineData struct {
 	SiteName        string
 	Posts           []TimelinePost
 	BaseUrl         string
 	ActiveNav       string
 	ShowSidebarInfo bool
+	RecentlyJoined  []SidebarProfile
+	Trending        []SidebarProfile
 }
 
 type PostViewData struct {
@@ -47,18 +57,22 @@ type PostViewData struct {
 	BaseUrl         string
 	ActiveNav       string
 	ShowSidebarInfo bool
+	RecentlyJoined  []SidebarProfile
+	Trending        []SidebarProfile
 }
 
 type ProfileData struct {
-	SiteName       string
-	Username       string
-	Posts          []TimelinePost
-	Feed           []TimelinePost
-	BaseUrl        string
-	HumanTier      string
-	HumanTierClass string
-	ActiveNav      string
+	SiteName        string
+	Username        string
+	Posts           []TimelinePost
+	Feed            []TimelinePost
+	BaseUrl         string
+	HumanTier       string
+	HumanTierClass  string
+	ActiveNav       string
 	ShowSidebarInfo bool
+	RecentlyJoined  []SidebarProfile
+	Trending        []SidebarProfile
 }
 
 type SearchData struct {
@@ -68,6 +82,8 @@ type SearchData struct {
 	BaseUrl         string
 	ActiveNav       string
 	ShowSidebarInfo bool
+	RecentlyJoined  []SidebarProfile
+	Trending        []SidebarProfile
 }
 
 type DashboardData struct {
@@ -76,14 +92,18 @@ type DashboardData struct {
 	BaseUrl         string
 	ActiveNav       string
 	ShowSidebarInfo bool
+	RecentlyJoined  []SidebarProfile
+	Trending        []SidebarProfile
 }
 
 type DocsData struct {
-	SiteName      string
-	BaseUrl       string
-	MaxPostLength int
-	ActiveNav     string
+	SiteName        string
+	BaseUrl         string
+	MaxPostLength   int
+	ActiveNav       string
 	ShowSidebarInfo bool
+	RecentlyJoined  []SidebarProfile
+	Trending        []SidebarProfile
 }
 
 func activityToTimelinePost(username, postId, content string, unixTimestamp int64, replyCount, likeCount int, inReplyTo string, isLocal bool, baseUrl string, sanitizer *bluemonday.Policy, humanStatuses map[string]service.HumanStatus) TimelinePost {
@@ -151,6 +171,7 @@ func (app *Application) Timeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.resolveReplyUsernames(timelinePosts)
+	recentlyJoined, trending := app.sidebarProfiles()
 
 	err := timelineTemplate.ExecuteTemplate(w, "timeline.tmpl", TimelineData{
 		SiteName:        app.Environment.SiteName,
@@ -158,6 +179,8 @@ func (app *Application) Timeline(w http.ResponseWriter, r *http.Request) {
 		BaseUrl:         app.Environment.BaseUrl,
 		ActiveNav:       "home",
 		ShowSidebarInfo: true,
+		RecentlyJoined:  recentlyJoined,
+		Trending:        trending,
 	})
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "e4f5a6b7").Str("ip", GetIP(r)).Err(err).Msg("error executing timeline template")
@@ -249,14 +272,17 @@ func (app *Application) PostView(w http.ResponseWriter, r *http.Request) {
 	app.resolveReplyUsernames(mainPosts)
 	mainPost = mainPosts[0]
 	app.resolveReplyUsernames(replies)
+	recentlyJoined, trending := app.sidebarProfiles()
 
 	err := postTemplate.ExecuteTemplate(w, "post.tmpl", PostViewData{
-		SiteName:  app.Environment.SiteName,
-		Post:      mainPost,
-		Parent:    parent,
-		Replies:   replies,
-		BaseUrl:   app.Environment.BaseUrl,
-		ActiveNav: "home",
+		SiteName:       app.Environment.SiteName,
+		Post:           mainPost,
+		Parent:         parent,
+		Replies:        replies,
+		BaseUrl:        app.Environment.BaseUrl,
+		ActiveNav:      "home",
+		RecentlyJoined: recentlyJoined,
+		Trending:       trending,
 	})
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "c3d4e5f6").Str("ip", GetIP(r)).Err(err).Msg("error executing post template")
@@ -313,6 +339,7 @@ func (app *Application) Profile(w http.ResponseWriter, r *http.Request) {
 		profileHumanTier = hs.Tier
 		profileHumanTierClass = hs.TierClass
 	}
+	recentlyJoined, trending := app.sidebarProfiles()
 
 	err := profileTemplate.ExecuteTemplate(w, "profile.tmpl", ProfileData{
 		SiteName:       app.Environment.SiteName,
@@ -323,6 +350,8 @@ func (app *Application) Profile(w http.ResponseWriter, r *http.Request) {
 		HumanTier:      profileHumanTier,
 		HumanTierClass: profileHumanTierClass,
 		ActiveNav:      "home",
+		RecentlyJoined: recentlyJoined,
+		Trending:       trending,
 	})
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "e5f6a7b8").Str("ip", GetIP(r)).Err(err).Msg("error executing profile template")
@@ -355,13 +384,16 @@ func (app *Application) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.resolveReplyUsernames(timelinePosts)
+	recentlyJoined, trending := app.sidebarProfiles()
 
 	err := searchTemplate.ExecuteTemplate(w, "search.tmpl", SearchData{
-		SiteName:  app.Environment.SiteName,
-		Query:     q,
-		Posts:     timelinePosts,
-		BaseUrl:   app.Environment.BaseUrl,
-		ActiveNav: "search",
+		SiteName:       app.Environment.SiteName,
+		Query:          q,
+		Posts:          timelinePosts,
+		BaseUrl:        app.Environment.BaseUrl,
+		ActiveNav:      "search",
+		RecentlyJoined: recentlyJoined,
+		Trending:       trending,
 	})
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "3f717776").Str("ip", GetIP(r)).Err(err).Msg("error executing search template")
@@ -371,12 +403,15 @@ func (app *Application) Search(w http.ResponseWriter, r *http.Request) {
 
 func (app *Application) Docs(w http.ResponseWriter, r *http.Request) {
 	log.Info().Str(common.UniqueCode, "f6a7b8c9").Str("ip", GetIP(r)).Msg("Docs")
+	recentlyJoined, trending := app.sidebarProfiles()
 
 	err := docsTemplate.ExecuteTemplate(w, "docs.tmpl", DocsData{
-		SiteName:      app.Environment.SiteName,
-		BaseUrl:       app.Environment.BaseUrl,
-		MaxPostLength: app.Environment.MaxPostLength,
-		ActiveNav:     "about",
+		SiteName:       app.Environment.SiteName,
+		BaseUrl:        app.Environment.BaseUrl,
+		MaxPostLength:  app.Environment.MaxPostLength,
+		ActiveNav:      "about",
+		RecentlyJoined: recentlyJoined,
+		Trending:       trending,
 	})
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "a7b8c9d0").Str("ip", GetIP(r)).Err(err).Msg("error executing docs template")
@@ -388,11 +423,14 @@ func (app *Application) Dashboard(w http.ResponseWriter, r *http.Request) {
 	log.Info().Str(common.UniqueCode, "b9c0d1e3").Str("ip", GetIP(r)).Msg("Dashboard")
 
 	stats := app.Service.GetDashboardStats()
+	recentlyJoined, trending := app.sidebarProfiles()
 
 	err := dashboardTemplate.ExecuteTemplate(w, "dashboard.tmpl", DashboardData{
-		SiteName: app.Environment.SiteName,
-		Stats:    stats,
-		BaseUrl:  app.Environment.BaseUrl,
+		SiteName:       app.Environment.SiteName,
+		Stats:          stats,
+		BaseUrl:        app.Environment.BaseUrl,
+		RecentlyJoined: recentlyJoined,
+		Trending:       trending,
 	})
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "c0d1e2f4").Str("ip", GetIP(r)).Err(err).Msg("error executing dashboard template")
