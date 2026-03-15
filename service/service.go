@@ -8,6 +8,7 @@ import (
 	"github.com/boyter/pincer/common"
 	"github.com/rs/zerolog/log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -41,6 +42,10 @@ type Service struct {
 	ApiRequests            int64
 	botsSaveMutex          sync.Mutex
 	activitySaveMutex      sync.Mutex
+	asyncWork              sync.WaitGroup
+	derivedState           atomic.Value
+	rebuildInFlight        int32
+	rebuildPending         int32
 }
 
 func NewService(environment *common.Environment) (*Service, error) {
@@ -59,6 +64,7 @@ func NewService(environment *common.Environment) (*Service, error) {
 
 	ser.LoadBots()
 	ser.LoadActivity()
+	ser.buildDerivedState()
 
 	return ser, nil
 }
@@ -84,6 +90,18 @@ func (s *Service) IncrementSearchCount() {
 
 func (s *Service) IncrementApiRequests() {
 	atomic.AddInt64(&s.ApiRequests, 1)
+}
+
+func (s *Service) runAsync(fn func()) {
+	s.asyncWork.Add(1)
+	go func() {
+		defer s.asyncWork.Done()
+		fn()
+	}()
+}
+
+func (s *Service) WaitForAsyncWork() {
+	s.asyncWork.Wait()
 }
 
 type DashboardStats struct {
@@ -177,7 +195,6 @@ func (s *Service) GetLocalActivity() []ActivityObject {
 
 func (s *Service) AddUserActivity(user string, activity ActivityObject) {
 	s.ServiceMutex.Lock()
-	defer s.ServiceMutex.Unlock()
 
 	s.TotalActivityProcessed++
 
@@ -237,6 +254,9 @@ func (s *Service) AddUserActivity(user string, activity ActivityObject) {
 			s.UserActivity[user].Activity = s.UserActivity[user].Activity[:len(s.UserActivity[user].Activity)-1]
 		}
 	}
+
+	s.ServiceMutex.Unlock()
+	s.refreshDerivedStateAsync()
 }
 
 func (s *Service) IsBozoBanned(username string) bool {
@@ -264,7 +284,8 @@ func (s *Service) BozoBanUser(username string) {
 	}
 	s.ServiceMutex.Unlock()
 
-	go s.SaveBots()
+	s.refreshDerivedStateAsync()
+	s.runAsync(s.SaveBots)
 }
 
 func (s *Service) CreatePost(author, content, inReplyTo string) (ActivityObject, error) {
@@ -374,7 +395,6 @@ func (s *Service) CreatePost(author, content, inReplyTo string) (ActivityObject,
 
 func (s *Service) PurgeBannedContent() (int, []string) {
 	s.ServiceMutex.Lock()
-	defer s.ServiceMutex.Unlock()
 
 	purged := 0
 	bannedAuthors := map[string]bool{}
@@ -419,6 +439,8 @@ func (s *Service) PurgeBannedContent() (int, []string) {
 		bannedList = append(bannedList, author)
 	}
 
+	s.ServiceMutex.Unlock()
+	s.refreshDerivedStateAsync()
 	return purged, bannedList
 }
 
@@ -436,7 +458,6 @@ func (s *Service) GetPost(postId string) (ActivityObject, bool) {
 
 func (s *Service) DeletePost(postId string) bool {
 	s.ServiceMutex.Lock()
-	defer s.ServiceMutex.Unlock()
 
 	found := false
 	inReplyTo := ""
@@ -473,6 +494,10 @@ func (s *Service) DeletePost(postId string) bool {
 		u.Activity = filtered
 	}
 
+	s.ServiceMutex.Unlock()
+	if found {
+		s.refreshDerivedStateAsync()
+	}
 	return found
 }
 
@@ -557,7 +582,8 @@ func (s *Service) LikePost(postId, username string) error {
 		return errors.New("post not found")
 	}
 
-	go s.SaveActivity()
+	s.refreshDerivedStateAsync()
+	s.runAsync(s.SaveActivity)
 	return nil
 }
 
@@ -590,7 +616,8 @@ func (s *Service) UnlikePost(postId, username string) error {
 		return errors.New("post not found")
 	}
 
-	go s.SaveActivity()
+	s.refreshDerivedStateAsync()
+	s.runAsync(s.SaveActivity)
 	return nil
 }
 
@@ -638,7 +665,8 @@ func (s *Service) RegisterBot(username string) (string, error) {
 	s.ApiKeyIndex[apiKey] = key
 	s.ServiceMutex.Unlock()
 
-	go s.SaveBots()
+	s.refreshDerivedStateAsync()
+	s.runAsync(s.SaveBots)
 
 	return apiKey, nil
 }
@@ -693,7 +721,7 @@ func (s *Service) FollowBot(follower, target string) error {
 	bot.Following = append(bot.Following, target)
 	s.ServiceMutex.Unlock()
 
-	go s.SaveBots()
+	s.runAsync(s.SaveBots)
 	return nil
 }
 
@@ -727,7 +755,7 @@ func (s *Service) UnfollowBot(follower, target string) error {
 	bot.Following = updated
 	s.ServiceMutex.Unlock()
 
-	go s.SaveBots()
+	s.runAsync(s.SaveBots)
 	return nil
 }
 
@@ -837,7 +865,7 @@ func (s *Service) SetBotAvatar(username, svgContent string) error {
 	bot.CustomAvatar = svgContent
 	s.ServiceMutex.Unlock()
 
-	go s.SaveBots()
+	s.runAsync(s.SaveBots)
 	return nil
 }
 
@@ -880,7 +908,8 @@ func (s *Service) VouchHuman(voter, target string) error {
 	bot.VouchedHuman = append(bot.VouchedHuman, target)
 	s.ServiceMutex.Unlock()
 
-	go s.SaveBots()
+	s.refreshDerivedStateAsync()
+	s.runAsync(s.SaveBots)
 	return nil
 }
 
@@ -914,7 +943,8 @@ func (s *Service) UnvouchHuman(voter, target string) error {
 	bot.VouchedHuman = updated
 	s.ServiceMutex.Unlock()
 
-	go s.SaveBots()
+	s.refreshDerivedStateAsync()
+	s.runAsync(s.SaveBots)
 	return nil
 }
 
@@ -957,20 +987,15 @@ func (s *Service) GetHumanStatusBatch(usernames []string) map[string]HumanStatus
 		lookup[strings.ToLower(u)] = true
 	}
 
-	s.ServiceMutex.RLock()
-	totalBots := len(s.RegisteredBots)
-
-	// Count vouches per username
+	snapshot := s.ensureDerivedStateSnapshot()
+	totalBots := 0
 	counts := make(map[string]int, len(usernames))
-	for _, bot := range s.RegisteredBots {
-		for _, v := range bot.VouchedHuman {
-			key := strings.ToLower(v)
-			if lookup[key] {
-				counts[key]++
-			}
+	if snapshot != nil {
+		totalBots = snapshot.TotalBots
+		for key := range lookup {
+			counts[key] = snapshot.HumanVouchCounts[key]
 		}
 	}
-	s.ServiceMutex.RUnlock()
 
 	for _, u := range usernames {
 		key := strings.ToLower(u)
@@ -981,6 +1006,10 @@ func (s *Service) GetHumanStatusBatch(usernames []string) map[string]HumanStatus
 }
 
 func (s *Service) SaveBots() {
+	if strings.TrimSpace(s.Environment.BotsFilePath) == "" {
+		return
+	}
+
 	s.ServiceMutex.RLock()
 	b, err := json.MarshalIndent(s.RegisteredBots, "", "  ")
 	s.ServiceMutex.RUnlock()
@@ -993,7 +1022,12 @@ func (s *Service) SaveBots() {
 	s.botsSaveMutex.Lock()
 	defer s.botsSaveMutex.Unlock()
 
-	tmp, err := os.CreateTemp(".", tempPrefixForPath(s.Environment.BotsFilePath)+".tmp.*")
+	tmpDir := filepath.Dir(s.Environment.BotsFilePath)
+	if tmpDir == "" {
+		tmpDir = "."
+	}
+
+	tmp, err := os.CreateTemp(tmpDir, tempPrefixForPath(s.Environment.BotsFilePath)+".tmp.*")
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "d6e7f8a9").Err(err).Msg("error creating temp bots file")
 		return
@@ -1051,6 +1085,10 @@ type activitySnapshot struct {
 }
 
 func (s *Service) SaveActivity() {
+	if strings.TrimSpace(s.Environment.ActivityFilePath) == "" {
+		return
+	}
+
 	s.ServiceMutex.RLock()
 	snapshot := activitySnapshot{
 		LocalActivity: make([]ActivityObject, len(s.LocalActivity)),
@@ -1069,7 +1107,12 @@ func (s *Service) SaveActivity() {
 	s.activitySaveMutex.Lock()
 	defer s.activitySaveMutex.Unlock()
 
-	tmp, err := os.CreateTemp(".", tempPrefixForPath(s.Environment.ActivityFilePath)+".tmp.*")
+	tmpDir := filepath.Dir(s.Environment.ActivityFilePath)
+	if tmpDir == "" {
+		tmpDir = "."
+	}
+
+	tmp, err := os.CreateTemp(tmpDir, tempPrefixForPath(s.Environment.ActivityFilePath)+".tmp.*")
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "b2c3d4e6").Err(err).Msg("error creating temp activity file")
 		return

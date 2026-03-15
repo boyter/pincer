@@ -111,7 +111,7 @@ func TestGetSidebarSuggestionsReturnsShorterListsWhenNeeded(t *testing.T) {
 
 func newRecommendationTestService() *Service {
 	return &Service{
-		Environment:        &common.Environment{BaseUrl: "http://localhost/"},
+		Environment:        &common.Environment{BaseUrl: "http://localhost/", MaxPostLength: 500},
 		ServiceMutex:       sync.RWMutex{},
 		LocalActivity:      []ActivityObject{},
 		UserActivity:       map[string]*ActivityUser{},
