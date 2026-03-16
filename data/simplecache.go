@@ -2,7 +2,6 @@ package data
 
 import (
 	"sync"
-	"time"
 )
 
 type cacheEntry struct {
@@ -18,6 +17,7 @@ type SimpleCache struct {
 	maxItems int
 	items    map[string]cacheEntry
 	lock     sync.Mutex
+	clock    int64
 }
 
 func NewSimpleCache(maxItems int) *SimpleCache {
@@ -25,6 +25,7 @@ func NewSimpleCache(maxItems int) *SimpleCache {
 		maxItems: maxItems,
 		items:    map[string]cacheEntry{},
 		lock:     sync.Mutex{},
+		clock:    0,
 	}
 
 	return &cache
@@ -35,10 +36,11 @@ func (cache *SimpleCache) Add(cacheKey string, entry []byte) {
 	defer cache.lock.Unlock()
 
 	cache.expireItems()
+	cache.clock++
 
 	cache.items[cacheKey] = cacheEntry{
 		entry:   entry,
-		addTime: time.Now().UnixNano(),
+		addTime: cache.clock,
 	}
 }
 
@@ -51,7 +53,8 @@ func (cache *SimpleCache) Get(cacheKey string) ([]byte, bool) {
 	if ok {
 		// if we got this item lets bump it so that things we use a lot remain
 		// IE make it LFU ish...
-		item.addTime = time.Now().UnixNano()
+		cache.clock++
+		item.addTime = cache.clock
 		cache.items[cacheKey] = item
 		return item.entry, true
 	}

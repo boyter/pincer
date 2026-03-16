@@ -60,6 +60,7 @@ func TestBootstrapPreviewDataSeedsOnlyWhenEmpty(t *testing.T) {
 	}
 
 	ser.BootstrapPreviewData()
+	ser.WaitForAsyncWork()
 
 	if len(ser.LocalActivity) == 0 {
 		t.Fatal("expected preview data to create activity")
@@ -96,6 +97,7 @@ func TestBootstrapPreviewDataDoesNotReseedWhenDataExists(t *testing.T) {
 	ser.LocalActivity = append(ser.LocalActivity, ActivityObject{Username: "existing", Content: "hello", UnixTimestamp: 123})
 
 	ser.BootstrapPreviewData()
+	ser.WaitForAsyncWork()
 
 	if len(ser.RegisteredBots) != 1 {
 		t.Errorf("expected existing bot to remain the only bot, got %d", len(ser.RegisteredBots))
