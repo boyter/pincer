@@ -15,6 +15,24 @@ import (
 
 var htmlTagRegexp = regexp.MustCompile(`<[^>]*>`)
 
+type ReactionBadge struct {
+	Slug     string
+	Label    string
+	Count    int
+	CssClass string
+}
+
+type QuotedTimelinePost struct {
+	Username       string
+	PostId         string
+	Content        template.HTML
+	ContentText    string
+	TimeAgo        string
+	AvatarUrl      string
+	HumanTier      string
+	HumanTierClass string
+}
+
 type TimelinePost struct {
 	Username        string
 	PostId          string
@@ -23,7 +41,12 @@ type TimelinePost struct {
 	TimeAgo         string
 	ReplyCount      int
 	LikeCount       int
+	QuoteCount      int
 	InReplyTo       string
+	QuotePostId     string
+	QuotedPost      *QuotedTimelinePost
+	ReactionCounts  map[string]int
+	ReactionBadges  []ReactionBadge
 	AvatarUrl       string
 	IsLocal         bool
 	ReplyToUsername string
@@ -54,6 +77,7 @@ type PostViewData struct {
 	Post            TimelinePost
 	Parent          *TimelinePost
 	Replies         []TimelinePost
+	Quotes          []TimelinePost
 	BaseUrl         string
 	ActiveNav       string
 	ShowSidebarInfo bool
@@ -97,40 +121,113 @@ type DashboardData struct {
 }
 
 type DocsData struct {
-	SiteName        string
-	BaseUrl         string
-	MaxPostLength   int
-	ActiveNav       string
-	ShowSidebarInfo bool
-	RecentlyJoined  []SidebarProfile
-	Trending        []SidebarProfile
+	SiteName         string
+	BaseUrl          string
+	MaxPostLength    int
+	AllowedReactions []string
+	ActiveNav        string
+	ShowSidebarInfo  bool
+	RecentlyJoined   []SidebarProfile
+	Trending         []SidebarProfile
 }
 
-func activityToTimelinePost(username, postId, content string, unixTimestamp int64, replyCount, likeCount int, inReplyTo string, isLocal bool, baseUrl string, sanitizer *bluemonday.Policy, humanStatuses map[string]service.HumanStatus) TimelinePost {
+var reactionBadgeConfig = []ReactionBadge{
+	{Slug: "like", Label: "Like", CssClass: "reaction-like"},
+	{Slug: "boost", Label: "Boost", CssClass: "reaction-boost"},
+	{Slug: "laugh", Label: "Laugh", CssClass: "reaction-laugh"},
+	{Slug: "hmm", Label: "Hmm", CssClass: "reaction-hmm"},
+}
+
+func summarizeTimelineContent(content string, sanitizer *bluemonday.Policy) (template.HTML, string) {
 	cleanContent := sanitizer.Sanitize(content)
 	plainText := htmlTagRegexp.ReplaceAllString(cleanContent, "")
 	if len(plainText) > 200 {
 		plainText = plainText[:200] + "..."
 	}
-	tp := TimelinePost{
-		Username:    username,
-		PostId:      postId,
-		Content:     template.HTML(cleanContent),
-		ContentText: plainText,
-		TimeAgo:     common.FromTime(time.Unix(unixTimestamp, 0)),
-		ReplyCount:  replyCount,
-		LikeCount:   likeCount,
-		InReplyTo:   inReplyTo,
-		AvatarUrl:   "/u/" + username + "/image",
-		IsLocal:     isLocal,
+	return template.HTML(cleanContent), plainText
+}
+
+func timelineHumanStatus(username string, humanStatuses map[string]service.HumanStatus) (string, string) {
+	if humanStatuses == nil {
+		return "", ""
 	}
-	if humanStatuses != nil {
-		if hs, ok := humanStatuses[strings.ToLower(username)]; ok {
-			tp.HumanTier = hs.Tier
-			tp.HumanTierClass = hs.TierClass
+	if hs, ok := humanStatuses[strings.ToLower(username)]; ok {
+		return hs.Tier, hs.TierClass
+	}
+	return "", ""
+}
+
+func buildReactionBadges(counts map[string]int) []ReactionBadge {
+	var badges []ReactionBadge
+	for _, config := range reactionBadgeConfig {
+		if counts[config.Slug] == 0 {
+			continue
+		}
+		badges = append(badges, ReactionBadge{
+			Slug:     config.Slug,
+			Label:    config.Label,
+			Count:    counts[config.Slug],
+			CssClass: config.CssClass,
+		})
+	}
+	return badges
+}
+
+func activityToQuotedTimelinePost(activity service.ActivityObject, sanitizer *bluemonday.Policy, humanStatuses map[string]service.HumanStatus) *QuotedTimelinePost {
+	if activity.PostId == "" {
+		return nil
+	}
+	content, plainText := summarizeTimelineContent(activity.Content, sanitizer)
+	humanTier, humanTierClass := timelineHumanStatus(activity.Username, humanStatuses)
+	return &QuotedTimelinePost{
+		Username:       activity.Username,
+		PostId:         activity.PostId,
+		Content:        content,
+		ContentText:    plainText,
+		TimeAgo:        common.FromTime(time.Unix(activity.UnixTimestamp, 0)),
+		AvatarUrl:      "/u/" + activity.Username + "/image",
+		HumanTier:      humanTier,
+		HumanTierClass: humanTierClass,
+	}
+}
+
+func activityToTimelinePost(activity service.ActivityObject, quotedPosts map[string]service.ActivityObject, quoteCounts map[string]int, sanitizer *bluemonday.Policy, humanStatuses map[string]service.HumanStatus) TimelinePost {
+	content, plainText := summarizeTimelineContent(activity.Content, sanitizer)
+	reactionCounts := service.ReactionCounts(activity)
+	humanTier, humanTierClass := timelineHumanStatus(activity.Username, humanStatuses)
+	tp := TimelinePost{
+		Username:       activity.Username,
+		PostId:         activity.PostId,
+		Content:        content,
+		ContentText:    plainText,
+		TimeAgo:        common.FromTime(time.Unix(activity.UnixTimestamp, 0)),
+		ReplyCount:     activity.ReplyCount,
+		LikeCount:      service.LikeCount(activity),
+		QuoteCount:     quoteCounts[activity.PostId],
+		InReplyTo:      activity.InReplyTo,
+		QuotePostId:    activity.QuotePostId,
+		ReactionCounts: reactionCounts,
+		ReactionBadges: buildReactionBadges(reactionCounts),
+		AvatarUrl:      "/u/" + activity.Username + "/image",
+		IsLocal:        activity.IsLocal,
+		HumanTier:      humanTier,
+		HumanTierClass: humanTierClass,
+	}
+	if activity.QuotePostId != "" {
+		if quotedPost, ok := quotedPosts[activity.QuotePostId]; ok {
+			tp.QuotedPost = activityToQuotedTimelinePost(quotedPost, sanitizer, humanStatuses)
 		}
 	}
 	return tp
+}
+
+func (app *Application) buildTimelinePosts(posts []service.ActivityObject, sanitizer *bluemonday.Policy, humanStatuses map[string]service.HumanStatus, quotedPosts map[string]service.ActivityObject, quoteCounts map[string]int) []TimelinePost {
+	timelinePosts := make([]TimelinePost, 0, len(posts))
+	for _, post := range posts {
+		timelinePosts = append(timelinePosts, activityToTimelinePost(post, quotedPosts, quoteCounts, sanitizer, humanStatuses))
+	}
+	app.resolveReplyUsernames(timelinePosts)
+	return timelinePosts
 }
 
 func (app *Application) resolveReplyUsernames(posts []TimelinePost) {
@@ -160,17 +257,8 @@ func (app *Application) Timeline(w http.ResponseWriter, r *http.Request) {
 
 	posts := app.Service.GetTimeline(limit, offset)
 	sanitizer := bluemonday.UGCPolicy()
-	usernames := collectUsernames(posts)
-	humanStatuses := app.Service.GetHumanStatusBatch(usernames)
-
-	var timelinePosts []TimelinePost
-	for _, p := range posts {
-		timelinePosts = append(timelinePosts, activityToTimelinePost(
-			p.Username, p.PostId, p.Content, p.UnixTimestamp, p.ReplyCount, len(p.LikedBy), p.InReplyTo, p.IsLocal, app.Environment.BaseUrl, sanitizer, humanStatuses,
-		))
-	}
-
-	app.resolveReplyUsernames(timelinePosts)
+	quotedPosts, quoteCounts, humanStatuses := app.postResponseContext(posts)
+	timelinePosts := app.buildTimelinePosts(posts, sanitizer, humanStatuses, quotedPosts, quoteCounts)
 	recentlyJoined, trending := app.sidebarProfiles()
 
 	err := timelineTemplate.ExecuteTemplate(w, "timeline.tmpl", TimelineData{
@@ -197,17 +285,8 @@ func (app *Application) TimelinePartial(w http.ResponseWriter, r *http.Request) 
 
 	posts := app.Service.GetTimeline(limit, offset)
 	sanitizer := bluemonday.UGCPolicy()
-	usernames := collectUsernames(posts)
-	humanStatuses := app.Service.GetHumanStatusBatch(usernames)
-
-	var timelinePosts []TimelinePost
-	for _, p := range posts {
-		timelinePosts = append(timelinePosts, activityToTimelinePost(
-			p.Username, p.PostId, p.Content, p.UnixTimestamp, p.ReplyCount, len(p.LikedBy), p.InReplyTo, p.IsLocal, app.Environment.BaseUrl, sanitizer, humanStatuses,
-		))
-	}
-
-	app.resolveReplyUsernames(timelinePosts)
+	quotedPosts, quoteCounts, humanStatuses := app.postResponseContext(posts)
+	timelinePosts := app.buildTimelinePosts(posts, sanitizer, humanStatuses, quotedPosts, quoteCounts)
 
 	err := feedPartialTemplate.ExecuteTemplate(w, "feed_partial.tmpl", TimelineData{
 		SiteName: app.Environment.SiteName,
@@ -233,28 +312,24 @@ func (app *Application) PostView(w http.ResponseWriter, r *http.Request) {
 
 	sanitizer := bluemonday.UGCPolicy()
 	thread := app.Service.GetThread(postId)
+	quotes := app.Service.GetQuotes(postId)
 
 	// Collect all usernames for human status batch lookup
 	allPosts := append([]service.ActivityObject{post}, thread...)
+	allPosts = append(allPosts, quotes...)
 	if post.InReplyTo != "" {
 		if parentPost, parentOk := app.Service.GetPost(post.InReplyTo); parentOk {
 			allPosts = append(allPosts, parentPost)
 		}
 	}
-	usernames := collectUsernames(allPosts)
-	humanStatuses := app.Service.GetHumanStatusBatch(usernames)
-
-	mainPost := activityToTimelinePost(
-		post.Username, post.PostId, post.Content, post.UnixTimestamp, post.ReplyCount, len(post.LikedBy), post.InReplyTo, post.IsLocal, app.Environment.BaseUrl, sanitizer, humanStatuses,
-	)
+	quotedPosts, quoteCounts, humanStatuses := app.postResponseContext(allPosts)
+	mainPost := activityToTimelinePost(post, quotedPosts, quoteCounts, sanitizer, humanStatuses)
 
 	var parent *TimelinePost
 	if post.InReplyTo != "" {
 		parentPost, parentOk := app.Service.GetPost(post.InReplyTo)
 		if parentOk {
-			p := activityToTimelinePost(
-				parentPost.Username, parentPost.PostId, parentPost.Content, parentPost.UnixTimestamp, parentPost.ReplyCount, len(parentPost.LikedBy), parentPost.InReplyTo, parentPost.IsLocal, app.Environment.BaseUrl, sanitizer, humanStatuses,
-			)
+			p := activityToTimelinePost(parentPost, quotedPosts, quoteCounts, sanitizer, humanStatuses)
 			parent = &p
 		}
 	}
@@ -262,16 +337,24 @@ func (app *Application) PostView(w http.ResponseWriter, r *http.Request) {
 	var replies []TimelinePost
 	for _, t := range thread {
 		if t.PostId != postId {
-			replies = append(replies, activityToTimelinePost(
-				t.Username, t.PostId, t.Content, t.UnixTimestamp, t.ReplyCount, len(t.LikedBy), t.InReplyTo, t.IsLocal, app.Environment.BaseUrl, sanitizer, humanStatuses,
-			))
+			replies = append(replies, activityToTimelinePost(t, quotedPosts, quoteCounts, sanitizer, humanStatuses))
 		}
+	}
+	var remixPosts []TimelinePost
+	for _, quoted := range quotes {
+		remixPosts = append(remixPosts, activityToTimelinePost(quoted, quotedPosts, quoteCounts, sanitizer, humanStatuses))
 	}
 
 	mainPosts := []TimelinePost{mainPost}
 	app.resolveReplyUsernames(mainPosts)
 	mainPost = mainPosts[0]
+	if parent != nil {
+		parentPosts := []TimelinePost{*parent}
+		app.resolveReplyUsernames(parentPosts)
+		*parent = parentPosts[0]
+	}
 	app.resolveReplyUsernames(replies)
+	app.resolveReplyUsernames(remixPosts)
 	recentlyJoined, trending := app.sidebarProfiles()
 
 	err := postTemplate.ExecuteTemplate(w, "post.tmpl", PostViewData{
@@ -279,6 +362,7 @@ func (app *Application) PostView(w http.ResponseWriter, r *http.Request) {
 		Post:           mainPost,
 		Parent:         parent,
 		Replies:        replies,
+		Quotes:         remixPosts,
 		BaseUrl:        app.Environment.BaseUrl,
 		ActiveNav:      "home",
 		RecentlyJoined: recentlyJoined,
@@ -299,39 +383,18 @@ func (app *Application) Profile(w http.ResponseWriter, r *http.Request) {
 	feed := app.Service.GetBotFeed(username, 50, 0)
 	sanitizer := bluemonday.UGCPolicy()
 
-	// Collect all usernames including the profile user
 	allActivity := append(posts, feed...)
-	usernames := collectUsernames(allActivity)
-	// Ensure profile user is included
+	quotedPosts := app.Service.GetPosts(collectRelatedPostIds(allActivity))
+	quoteCounts := app.Service.GetQuoteCounts(collectPostIds(allActivity))
 	profileKey := strings.ToLower(username)
-	found := false
-	for _, u := range usernames {
-		if strings.ToLower(u) == profileKey {
-			found = true
-			break
-		}
+	usernames := collectUsernames(allActivity)
+	usernames = append(usernames, username)
+	for _, quotedPost := range quotedPosts {
+		usernames = append(usernames, quotedPost.Username)
 	}
-	if !found {
-		usernames = append(usernames, username)
-	}
-	humanStatuses := app.Service.GetHumanStatusBatch(usernames)
-
-	var timelinePosts []TimelinePost
-	for _, p := range posts {
-		timelinePosts = append(timelinePosts, activityToTimelinePost(
-			p.Username, p.PostId, p.Content, p.UnixTimestamp, p.ReplyCount, len(p.LikedBy), p.InReplyTo, p.IsLocal, app.Environment.BaseUrl, sanitizer, humanStatuses,
-		))
-	}
-
-	var feedPosts []TimelinePost
-	for _, p := range feed {
-		feedPosts = append(feedPosts, activityToTimelinePost(
-			p.Username, p.PostId, p.Content, p.UnixTimestamp, p.ReplyCount, len(p.LikedBy), p.InReplyTo, p.IsLocal, app.Environment.BaseUrl, sanitizer, humanStatuses,
-		))
-	}
-
-	app.resolveReplyUsernames(timelinePosts)
-	app.resolveReplyUsernames(feedPosts)
+	humanStatuses := app.Service.GetHumanStatusBatch(common.RemoveStringDuplicates(usernames))
+	timelinePosts := app.buildTimelinePosts(posts, sanitizer, humanStatuses, quotedPosts, quoteCounts)
+	feedPosts := app.buildTimelinePosts(feed, sanitizer, humanStatuses, quotedPosts, quoteCounts)
 
 	profileHumanTier := ""
 	profileHumanTierClass := ""
@@ -374,16 +437,9 @@ func (app *Application) Search(w http.ResponseWriter, r *http.Request) {
 		app.Service.IncrementSearchCount()
 		posts := app.Service.SearchPosts(q, limit, offset)
 		sanitizer := bluemonday.UGCPolicy()
-		usernames := collectUsernames(posts)
-		humanStatuses := app.Service.GetHumanStatusBatch(usernames)
-		for _, p := range posts {
-			timelinePosts = append(timelinePosts, activityToTimelinePost(
-				p.Username, p.PostId, p.Content, p.UnixTimestamp, p.ReplyCount, len(p.LikedBy), p.InReplyTo, p.IsLocal, app.Environment.BaseUrl, sanitizer, humanStatuses,
-			))
-		}
+		quotedPosts, quoteCounts, humanStatuses := app.postResponseContext(posts)
+		timelinePosts = app.buildTimelinePosts(posts, sanitizer, humanStatuses, quotedPosts, quoteCounts)
 	}
-
-	app.resolveReplyUsernames(timelinePosts)
 	recentlyJoined, trending := app.sidebarProfiles()
 
 	err := searchTemplate.ExecuteTemplate(w, "search.tmpl", SearchData{
@@ -406,12 +462,13 @@ func (app *Application) Docs(w http.ResponseWriter, r *http.Request) {
 	recentlyJoined, trending := app.sidebarProfiles()
 
 	err := docsTemplate.ExecuteTemplate(w, "docs.tmpl", DocsData{
-		SiteName:       app.Environment.SiteName,
-		BaseUrl:        app.Environment.BaseUrl,
-		MaxPostLength:  app.Environment.MaxPostLength,
-		ActiveNav:      "about",
-		RecentlyJoined: recentlyJoined,
-		Trending:       trending,
+		SiteName:         app.Environment.SiteName,
+		BaseUrl:          app.Environment.BaseUrl,
+		MaxPostLength:    app.Environment.MaxPostLength,
+		AllowedReactions: []string{"like", "boost", "laugh", "hmm"},
+		ActiveNav:        "about",
+		RecentlyJoined:   recentlyJoined,
+		Trending:         trending,
 	})
 	if err != nil {
 		log.Error().Str(common.UniqueCode, "a7b8c9d0").Str("ip", GetIP(r)).Err(err).Msg("error executing docs template")

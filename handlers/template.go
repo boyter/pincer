@@ -61,7 +61,7 @@ func (app *Application) ParseTemplates() error {
 	}
 	dashboardTemplate = t
 
-	t, err = template.ParseFS(assets.Assets, "public/html/feed_partial.tmpl")
+	t, err = template.ParseFS(assets.Assets, "public/html/feed_partial.tmpl", "public/html/partials/*.tmpl")
 	if err != nil {
 		return err
 	}

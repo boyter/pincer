@@ -24,6 +24,13 @@ const (
 	PostRateWindowSeconds = 60
 )
 
+var allowedReactions = map[string]struct{}{
+	"like":  {},
+	"boost": {},
+	"laugh": {},
+	"hmm":   {},
+}
+
 type Service struct {
 	Environment            *common.Environment
 	BackgroundJobsStarted  bool
@@ -75,7 +82,12 @@ func (s *Service) GetUserActivity(user string) []ActivityObject {
 
 	// if its being viewed lets bump the time to prevent it being purged
 	s.UserActivity[user].LastInteractionUnixTimestamp = time.Now().Unix()
-	return s.UserActivity[user].Activity
+	activity := make([]ActivityObject, len(s.UserActivity[user].Activity))
+	copy(activity, s.UserActivity[user].Activity)
+	for i := range activity {
+		normalizeActivityObject(&activity[i])
+	}
+	return activity
 }
 
 func (s *Service) IncrementSearchCount() {
@@ -172,12 +184,18 @@ func (s *Service) GetLocalActivity() []ActivityObject {
 	s.ServiceMutex.RLock()
 	defer s.ServiceMutex.RUnlock()
 
-	return s.LocalActivity
+	activity := make([]ActivityObject, len(s.LocalActivity))
+	copy(activity, s.LocalActivity)
+	for i := range activity {
+		normalizeActivityObject(&activity[i])
+	}
+	return activity
 }
 
 func (s *Service) AddUserActivity(user string, activity ActivityObject) {
 	s.ServiceMutex.Lock()
 	defer s.ServiceMutex.Unlock()
+	normalizeActivityObject(&activity)
 
 	s.TotalActivityProcessed++
 
@@ -239,6 +257,145 @@ func (s *Service) AddUserActivity(user string, activity ActivityObject) {
 	}
 }
 
+func IsAllowedReaction(reaction string) bool {
+	_, ok := allowedReactions[strings.ToLower(strings.TrimSpace(reaction))]
+	return ok
+}
+
+func canonicalReaction(reaction string) string {
+	return strings.ToLower(strings.TrimSpace(reaction))
+}
+
+func normalizeReactionsMap(reactions map[string][]string) map[string][]string {
+	if len(reactions) == 0 {
+		return nil
+	}
+
+	normalized := map[string][]string{}
+	for reaction, usernames := range reactions {
+		reaction = canonicalReaction(reaction)
+		if !IsAllowedReaction(reaction) {
+			continue
+		}
+
+		seen := map[string]bool{}
+		var unique []string
+		for _, username := range usernames {
+			trimmed := strings.TrimSpace(username)
+			if trimmed == "" {
+				continue
+			}
+			key := strings.ToLower(trimmed)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			unique = append(unique, trimmed)
+		}
+		if len(unique) != 0 {
+			normalized[reaction] = unique
+		}
+	}
+
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	return normalized
+}
+
+func normalizeActivityObject(activity *ActivityObject) {
+	if activity == nil {
+		return
+	}
+
+	activity.Reactions = normalizeReactionsMap(activity.Reactions)
+	for _, username := range activity.LikedBy {
+		activity.Reactions = addReactionUsernames(activity.Reactions, "like", username)
+	}
+	activity.LikedBy = nil
+}
+
+func addReactionUsernames(reactions map[string][]string, reaction string, usernames ...string) map[string][]string {
+	reaction = canonicalReaction(reaction)
+	if !IsAllowedReaction(reaction) {
+		return reactions
+	}
+	if reactions == nil {
+		reactions = map[string][]string{}
+	}
+
+	current := reactions[reaction]
+	seen := map[string]bool{}
+	for _, username := range current {
+		seen[strings.ToLower(username)] = true
+	}
+
+	for _, username := range usernames {
+		trimmed := strings.TrimSpace(username)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		current = append(current, trimmed)
+	}
+
+	if len(current) == 0 {
+		delete(reactions, reaction)
+	} else {
+		reactions[reaction] = current
+	}
+	if len(reactions) == 0 {
+		return nil
+	}
+
+	return reactions
+}
+
+func copyReactionCounts(reactions map[string][]string) map[string]int {
+	if len(reactions) == 0 {
+		return map[string]int{}
+	}
+
+	counts := map[string]int{}
+	for _, reaction := range []string{"like", "boost", "laugh", "hmm"} {
+		if usernames := reactions[reaction]; len(usernames) != 0 {
+			counts[reaction] = len(usernames)
+		}
+	}
+	return counts
+}
+
+func ReactionCounts(activity ActivityObject) map[string]int {
+	normalized := activity
+	normalizeActivityObject(&normalized)
+	return copyReactionCounts(normalized.Reactions)
+}
+
+func LikeCount(activity ActivityObject) int {
+	return ReactionCounts(activity)["like"]
+}
+
+func (s *Service) replaceActivityCopiesLocked(updated ActivityObject) {
+	for i := range s.LocalActivity {
+		if s.LocalActivity[i].PostId == updated.PostId {
+			s.LocalActivity[i] = updated
+			break
+		}
+	}
+	for _, user := range s.UserActivity {
+		for i := range user.Activity {
+			if user.Activity[i].PostId == updated.PostId {
+				user.Activity[i] = updated
+			}
+		}
+	}
+}
+
 func (s *Service) IsBozoBanned(username string) bool {
 	key := strings.ToLower(username)
 
@@ -267,7 +424,7 @@ func (s *Service) BozoBanUser(username string) {
 	go s.SaveBots()
 }
 
-func (s *Service) CreatePost(author, content, inReplyTo string) (ActivityObject, error) {
+func (s *Service) CreatePost(author, content, inReplyTo, quotePostId string) (ActivityObject, error) {
 	maxLen := s.Environment.MaxPostLength
 	if len(content) > maxLen {
 		return ActivityObject{}, errors.New("content exceeds maximum length")
@@ -284,6 +441,16 @@ func (s *Service) CreatePost(author, content, inReplyTo string) (ActivityObject,
 	}
 	if !usernameRegex.MatchString(author) {
 		return ActivityObject{}, errors.New("author must contain only alphanumeric characters and underscores")
+	}
+	inReplyTo = strings.TrimSpace(inReplyTo)
+	quotePostId = strings.TrimSpace(quotePostId)
+	if inReplyTo != "" && quotePostId != "" {
+		return ActivityObject{}, errors.New("cannot use in_reply_to and quote_post_id on the same post")
+	}
+	if quotePostId != "" {
+		if _, ok := s.GetPost(quotePostId); !ok {
+			return ActivityObject{}, errors.New("quoted post not found")
+		}
 	}
 
 	// Rate limit: max 10 posts per minute per user
@@ -319,6 +486,7 @@ func (s *Service) CreatePost(author, content, inReplyTo string) (ActivityObject,
 			Url:           fmt.Sprintf("%s/post/%s/", baseUrl, postId),
 			IsLocal:       true,
 			InReplyTo:     inReplyTo,
+			QuotePostId:   quotePostId,
 			PostId:        postId,
 		}, nil
 	}
@@ -337,6 +505,7 @@ func (s *Service) CreatePost(author, content, inReplyTo string) (ActivityObject,
 			Url:           fmt.Sprintf("%s/post/%s/", baseUrl, postId),
 			IsLocal:       true,
 			InReplyTo:     inReplyTo,
+			QuotePostId:   quotePostId,
 			PostId:        postId,
 		}, nil
 	}
@@ -352,6 +521,7 @@ func (s *Service) CreatePost(author, content, inReplyTo string) (ActivityObject,
 		Url:           fmt.Sprintf("%s/post/%s/", baseUrl, postId),
 		IsLocal:       true,
 		InReplyTo:     inReplyTo,
+		QuotePostId:   quotePostId,
 		PostId:        postId,
 	}
 
@@ -428,10 +598,40 @@ func (s *Service) GetPost(postId string) (ActivityObject, bool) {
 
 	for _, a := range s.LocalActivity {
 		if a.PostId == postId {
+			normalizeActivityObject(&a)
 			return a, true
 		}
 	}
 	return ActivityObject{}, false
+}
+
+func (s *Service) GetPosts(postIds []string) map[string]ActivityObject {
+	s.ServiceMutex.RLock()
+	defer s.ServiceMutex.RUnlock()
+
+	need := map[string]bool{}
+	for _, postId := range postIds {
+		if strings.TrimSpace(postId) != "" {
+			need[postId] = true
+		}
+	}
+	if len(need) == 0 {
+		return map[string]ActivityObject{}
+	}
+
+	posts := map[string]ActivityObject{}
+	for _, activity := range s.LocalActivity {
+		if !need[activity.PostId] {
+			continue
+		}
+		normalizeActivityObject(&activity)
+		posts[activity.PostId] = activity
+		if len(posts) == len(need) {
+			break
+		}
+	}
+
+	return posts
 }
 
 func (s *Service) DeletePost(postId string) bool {
@@ -483,6 +683,7 @@ func (s *Service) GetThread(postId string) []ActivityObject {
 	var result []ActivityObject
 	for _, a := range s.LocalActivity {
 		if a.PostId == postId || a.InReplyTo == postId {
+			normalizeActivityObject(&a)
 			result = append(result, a)
 		}
 	}
@@ -492,6 +693,55 @@ func (s *Service) GetThread(postId string) []ActivityObject {
 	})
 
 	return result
+}
+
+func (s *Service) GetQuotes(postId string) []ActivityObject {
+	s.ServiceMutex.RLock()
+	defer s.ServiceMutex.RUnlock()
+
+	var result []ActivityObject
+	for _, activity := range s.LocalActivity {
+		if activity.QuotePostId == postId {
+			normalizeActivityObject(&activity)
+			result = append(result, activity)
+		}
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].UnixTimestamp < result[j].UnixTimestamp
+	})
+
+	return result
+}
+
+func (s *Service) GetQuoteCount(postId string) int {
+	return s.GetQuoteCounts([]string{postId})[postId]
+}
+
+func (s *Service) GetQuoteCounts(postIds []string) map[string]int {
+	s.ServiceMutex.RLock()
+	defer s.ServiceMutex.RUnlock()
+
+	need := map[string]bool{}
+	counts := map[string]int{}
+	for _, postId := range postIds {
+		if strings.TrimSpace(postId) == "" {
+			continue
+		}
+		need[postId] = true
+		counts[postId] = 0
+	}
+	if len(need) == 0 {
+		return counts
+	}
+
+	for _, activity := range s.LocalActivity {
+		if need[activity.QuotePostId] {
+			counts[activity.QuotePostId]++
+		}
+	}
+
+	return counts
 }
 
 func (s *Service) GetTimeline(limit, offset int) []ActivityObject {
@@ -508,7 +758,9 @@ func (s *Service) GetTimeline(limit, offset int) []ActivityObject {
 	start := total - 1 - offset
 	count := 0
 	for i := start; i >= 0 && count < limit; i-- {
-		result = append(result, s.LocalActivity[i])
+		activity := s.LocalActivity[i]
+		normalizeActivityObject(&activity)
+		result = append(result, activity)
 		count++
 	}
 
@@ -522,6 +774,7 @@ func (s *Service) GetUserPosts(username string) []ActivityObject {
 	var result []ActivityObject
 	for _, a := range s.LocalActivity {
 		if a.IsLocal && a.Username == username {
+			normalizeActivityObject(&a)
 			result = append(result, a)
 		}
 	}
@@ -533,65 +786,84 @@ func (s *Service) GetUserPosts(username string) []ActivityObject {
 	return result
 }
 
-func (s *Service) LikePost(postId, username string) error {
+func (s *Service) AddReaction(postId, username, reaction string) error {
+	reaction = canonicalReaction(reaction)
+	if !IsAllowedReaction(reaction) {
+		return errors.New("unsupported reaction")
+	}
+
 	s.ServiceMutex.Lock()
+	defer s.ServiceMutex.Unlock()
 
-	found := false
 	for i := range s.LocalActivity {
-		if s.LocalActivity[i].PostId == postId {
-			for _, u := range s.LocalActivity[i].LikedBy {
-				if u == username {
-					s.ServiceMutex.Unlock()
-					return errors.New("already liked this post")
-				}
-			}
-			s.LocalActivity[i].LikedBy = append(s.LocalActivity[i].LikedBy, username)
-			found = true
-			break
+		if s.LocalActivity[i].PostId != postId {
+			continue
 		}
+
+		normalizeActivityObject(&s.LocalActivity[i])
+		for _, existing := range s.LocalActivity[i].Reactions[reaction] {
+			if strings.EqualFold(existing, username) {
+				return errors.New("already reacted with this reaction")
+			}
+		}
+		s.LocalActivity[i].Reactions = addReactionUsernames(s.LocalActivity[i].Reactions, reaction, username)
+		s.replaceActivityCopiesLocked(s.LocalActivity[i])
+		go s.SaveActivity()
+		return nil
 	}
 
-	s.ServiceMutex.Unlock()
+	return errors.New("post not found")
+}
 
-	if !found {
-		return errors.New("post not found")
+func (s *Service) RemoveReaction(postId, username, reaction string) error {
+	reaction = canonicalReaction(reaction)
+	if !IsAllowedReaction(reaction) {
+		return errors.New("unsupported reaction")
 	}
 
-	go s.SaveActivity()
-	return nil
+	s.ServiceMutex.Lock()
+	defer s.ServiceMutex.Unlock()
+
+	for i := range s.LocalActivity {
+		if s.LocalActivity[i].PostId != postId {
+			continue
+		}
+
+		normalizeActivityObject(&s.LocalActivity[i])
+		var updated []string
+		foundReaction := false
+		for _, existing := range s.LocalActivity[i].Reactions[reaction] {
+			if strings.EqualFold(existing, username) {
+				foundReaction = true
+				continue
+			}
+			updated = append(updated, existing)
+		}
+		if !foundReaction {
+			return errors.New("reaction not found for this user")
+		}
+		if len(updated) == 0 {
+			delete(s.LocalActivity[i].Reactions, reaction)
+		} else {
+			s.LocalActivity[i].Reactions[reaction] = updated
+		}
+		if len(s.LocalActivity[i].Reactions) == 0 {
+			s.LocalActivity[i].Reactions = nil
+		}
+		s.replaceActivityCopiesLocked(s.LocalActivity[i])
+		go s.SaveActivity()
+		return nil
+	}
+
+	return errors.New("post not found")
+}
+
+func (s *Service) LikePost(postId, username string) error {
+	return s.AddReaction(postId, username, "like")
 }
 
 func (s *Service) UnlikePost(postId, username string) error {
-	s.ServiceMutex.Lock()
-
-	found := false
-	for i := range s.LocalActivity {
-		if s.LocalActivity[i].PostId == postId {
-			var updated []string
-			for _, u := range s.LocalActivity[i].LikedBy {
-				if u == username {
-					found = true
-				} else {
-					updated = append(updated, u)
-				}
-			}
-			if !found {
-				s.ServiceMutex.Unlock()
-				return errors.New("not liked by this user")
-			}
-			s.LocalActivity[i].LikedBy = updated
-			break
-		}
-	}
-
-	s.ServiceMutex.Unlock()
-
-	if !found {
-		return errors.New("post not found")
-	}
-
-	go s.SaveActivity()
-	return nil
+	return s.RemoveReaction(postId, username, "like")
 }
 
 func (s *Service) IdentifyMentions(content string) []string {
@@ -769,9 +1041,11 @@ func (s *Service) GetBotFeed(username string, limit, offset int) []ActivityObjec
 
 		isMention := strings.Contains(strings.ToLower(a.Content), mentionTag)
 		isReply := a.InReplyTo != "" && s.isPostByUser(a.InReplyTo, key)
+		isQuote := a.QuotePostId != "" && s.isPostByUser(a.QuotePostId, key)
 		isFollowed := followSet[strings.ToLower(a.Username)]
 
-		if isMention || isReply || isFollowed {
+		if isMention || isReply || isQuote || isFollowed {
+			normalizeActivityObject(&a)
 			result = append(result, a)
 		}
 	}
@@ -810,6 +1084,7 @@ func (s *Service) SearchPosts(query string, limit, offset int) []ActivityObject 
 	for i := len(s.LocalActivity) - 1; i >= 0; i-- {
 		a := s.LocalActivity[i]
 		if strings.Contains(strings.ToLower(a.Content), query) || strings.Contains(strings.ToLower(a.Username), query) {
+			normalizeActivityObject(&a)
 			result = append(result, a)
 		}
 	}
@@ -1050,15 +1325,36 @@ type activitySnapshot struct {
 	TotalActivity int64                    `json:"total_activity"`
 }
 
+func normalizeActivitySnapshot(snapshot *activitySnapshot) {
+	for i := range snapshot.LocalActivity {
+		normalizeActivityObject(&snapshot.LocalActivity[i])
+	}
+	for _, user := range snapshot.UserActivity {
+		for i := range user.Activity {
+			normalizeActivityObject(&user.Activity[i])
+		}
+	}
+}
+
 func (s *Service) SaveActivity() {
 	s.ServiceMutex.RLock()
 	snapshot := activitySnapshot{
 		LocalActivity: make([]ActivityObject, len(s.LocalActivity)),
-		UserActivity:  s.UserActivity,
+		UserActivity:  map[string]*ActivityUser{},
 		TotalActivity: s.TotalActivity,
 	}
 	copy(snapshot.LocalActivity, s.LocalActivity)
+	for key, user := range s.UserActivity {
+		userCopy := &ActivityUser{
+			Name:                         user.Name,
+			Activity:                     make([]ActivityObject, len(user.Activity)),
+			LastInteractionUnixTimestamp: user.LastInteractionUnixTimestamp,
+		}
+		copy(userCopy.Activity, user.Activity)
+		snapshot.UserActivity[key] = userCopy
+	}
 	s.ServiceMutex.RUnlock()
+	normalizeActivitySnapshot(&snapshot)
 
 	b, err := json.Marshal(snapshot)
 	if err != nil {
@@ -1109,6 +1405,7 @@ func (s *Service) LoadActivity() {
 		log.Error().Str(common.UniqueCode, "a7b8c9d1").Err(err).Msg("error unmarshalling activity file")
 		return
 	}
+	normalizeActivitySnapshot(&snapshot)
 
 	s.LocalActivity = snapshot.LocalActivity
 	s.UserActivity = snapshot.UserActivity

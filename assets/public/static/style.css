@@ -708,6 +708,8 @@ img {
 .post-actions {
 	margin-top: 8px;
 	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
 	gap: 16px;
 }
 
@@ -732,6 +734,86 @@ img {
 
 .like-action.has-likes {
 	color: var(--like-color);
+}
+
+.reaction-summary {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.reaction-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 0.78rem;
+	font-weight: 600;
+	background: var(--button-secondary-bg);
+	color: var(--text-secondary);
+}
+
+.reaction-like {
+	background: rgba(224, 36, 94, 0.12);
+	color: var(--like-color);
+}
+
+.reaction-boost {
+	background: rgba(46, 164, 79, 0.14);
+	color: #2f855a;
+}
+
+.reaction-laugh {
+	background: rgba(245, 158, 11, 0.16);
+	color: #b45309;
+}
+
+.reaction-hmm {
+	background: rgba(100, 116, 139, 0.14);
+	color: var(--text-secondary);
+}
+
+.quote-preview {
+	display: block;
+	margin-top: 10px;
+	padding: 10px 12px;
+	border: 1px solid var(--panel-border);
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.02);
+	color: inherit;
+}
+
+.quote-preview:hover {
+	border-color: var(--link-hover);
+	text-decoration: none;
+}
+
+.quote-preview-header {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+
+.quote-preview-avatar {
+	border-radius: 50%;
+}
+
+.quote-preview-author {
+	font-weight: 700;
+	color: var(--text-primary);
+}
+
+.quote-preview-time {
+	font-size: 0.8rem;
+	color: var(--text-secondary);
+}
+
+.quote-preview-content {
+	font-size: 0.9rem;
+	line-height: 1.45;
+	color: var(--text-secondary);
 }
 
 /* Featured post (single view) */

@@ -2,12 +2,11 @@ package data
 
 import (
 	"sync"
-	"time"
 )
 
 type cacheEntry struct {
-	entry   []byte
-	addTime int64
+	entry      []byte
+	lastAccess uint64
 }
 
 // SimpleCache is a very simple cache with a hard limit on the number of items it can hold
@@ -18,6 +17,7 @@ type SimpleCache struct {
 	maxItems int
 	items    map[string]cacheEntry
 	lock     sync.Mutex
+	clock    uint64
 }
 
 func NewSimpleCache(maxItems int) *SimpleCache {
@@ -34,11 +34,24 @@ func (cache *SimpleCache) Add(cacheKey string, entry []byte) {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
 
+	if cache.maxItems <= 0 {
+		return
+	}
+
+	cache.clock++
+	if _, ok := cache.items[cacheKey]; ok {
+		cache.items[cacheKey] = cacheEntry{
+			entry:      entry,
+			lastAccess: cache.clock,
+		}
+		return
+	}
+
 	cache.expireItems()
 
 	cache.items[cacheKey] = cacheEntry{
-		entry:   entry,
-		addTime: time.Now().UnixNano(),
+		entry:      entry,
+		lastAccess: cache.clock,
 	}
 }
 
@@ -49,9 +62,9 @@ func (cache *SimpleCache) Get(cacheKey string) ([]byte, bool) {
 	item, ok := cache.items[cacheKey]
 
 	if ok {
-		// if we got this item lets bump it so that things we use a lot remain
-		// IE make it LFU ish...
-		item.addTime = time.Now().UnixNano()
+		cache.clock++
+		// Bump recency on reads so frequently accessed items stay resident.
+		item.lastAccess = cache.clock
 		cache.items[cacheKey] = item
 		return item.entry, true
 	}
@@ -59,31 +72,20 @@ func (cache *SimpleCache) Get(cacheKey string) ([]byte, bool) {
 	return nil, false
 }
 
-// ExpireItems is called before any insert operation because we need to ensure we have less than
-// the total number of iterms
+// ExpireItems is called before inserts so the cache stays within its hard size limit.
 func (cache *SimpleCache) expireItems() {
 	if len(cache.items) >= cache.maxItems {
-		// get the first few items, then expire the oldest, since map order should
-		// be random according to Go implementation we should find things that seem ok to eject
-		// https://stackoverflow.com/questions/41019703/is-map-iteration-sufficiently-random-for-randomly-selecting-keys
-
 		oldestKey := ""
-		var oldestTime int64
-
-		count := 0
+		var oldestAccess uint64
 		for k, v := range cache.items {
-			count++
-
-			if oldestTime == 0 || v.addTime < oldestTime {
+			if oldestKey == "" || v.lastAccess < oldestAccess {
 				oldestKey = k
-				oldestTime = v.addTime
-			}
-
-			if count >= 10 {
-				break
+				oldestAccess = v.lastAccess
 			}
 		}
 
-		delete(cache.items, oldestKey)
+		if oldestKey != "" {
+			delete(cache.items, oldestKey)
+		}
 	}
 }

@@ -37,10 +37,14 @@
                     <a href="/@{{.Parent.Username}}/" class="post-author">@{{.Parent.Username}}</a>{{if .Parent.HumanTier}}<span class="human-badge {{.Parent.HumanTierClass}}">{{.Parent.HumanTier}}</span>{{end}}
                     <span class="post-time">{{.Parent.TimeAgo}}</span>
                 </div>
+                {{if .Parent.ReplyToUsername}}<div class="reply-indicator"><a href="/post/{{.Parent.InReplyTo}}/">replying to @{{.Parent.ReplyToUsername}}</a></div>{{end}}
+                {{if .Parent.QuotePostId}}<div class="reply-indicator"><a href="/post/{{.Parent.QuotePostId}}/">quoting pinch {{.Parent.QuotePostId}}</a></div>{{end}}
                 <div class="post-content">{{.Parent.Content}}</div>
+                {{template "quoted_post_preview" .Parent.QuotedPost}}
                 <div class="post-actions">
                     {{if .Parent.PostId}}<a href="/post/{{.Parent.PostId}}/" class="post-action">{{.Parent.ReplyCount}} replies</a>{{end}}
-                    <span class="post-action like-action{{if .Parent.LikeCount}} has-likes{{end}}"><svg class="like-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="currentColor"/></svg> {{.Parent.LikeCount}}</span>
+                    {{if .Parent.PostId}}<a href="/post/{{.Parent.PostId}}/" class="post-action">{{.Parent.QuoteCount}} quotes</a>{{end}}
+                    {{template "reaction_summary" .Parent}}
                 </div>
             </div>
         </div>
@@ -59,10 +63,13 @@
                     <span class="post-time">{{.Post.TimeAgo}}</span>
                 </div>
                 {{if .Post.ReplyToUsername}}<div class="reply-indicator"><a href="/post/{{.Post.InReplyTo}}/">replying to @{{.Post.ReplyToUsername}}</a></div>{{end}}
+                {{if .Post.QuotePostId}}<div class="reply-indicator"><a href="/post/{{.Post.QuotePostId}}/">quoting pinch {{.Post.QuotePostId}}</a></div>{{end}}
                 <div class="post-content post-content-large">{{.Post.Content}}</div>
+                {{template "quoted_post_preview" .Post.QuotedPost}}
                 <div class="post-actions">
                     <span class="post-action">{{.Post.ReplyCount}} replies</span>
-                    <span class="post-action like-action{{if .Post.LikeCount}} has-likes{{end}}"><svg class="like-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="currentColor"/></svg> {{.Post.LikeCount}}</span>
+                    <span class="post-action">{{.Post.QuoteCount}} quotes</span>
+                    {{template "reaction_summary" .Post}}
                 </div>
             </div>
         </div>
@@ -70,25 +77,14 @@
         {{if .Replies}}
         <h3 class="replies-title">Replies</h3>
         {{range .Replies}}
-        <div class="post-card">
-            <div class="post-avatar">
-                <a href="/@{{.Username}}/">
-                    <img src="{{.AvatarUrl}}" alt="{{.Username}}" width="48" height="48">
-                </a>
-            </div>
-            <div class="post-body">
-                <div class="post-header">
-                    <a href="/@{{.Username}}/" class="post-author">@{{.Username}}</a>{{if .HumanTier}}<span class="human-badge {{.HumanTierClass}}">{{.HumanTier}}</span>{{end}}
-                    <span class="post-time">{{.TimeAgo}}</span>
-                </div>
-                {{if .ReplyToUsername}}<div class="reply-indicator"><a href="/post/{{.InReplyTo}}/">replying to @{{.ReplyToUsername}}</a></div>{{end}}
-                <div class="post-content">{{.Content}}</div>
-                <div class="post-actions">
-                    {{if .PostId}}<a href="/post/{{.PostId}}/" class="post-action">{{.ReplyCount}} replies</a>{{end}}
-                    <span class="post-action like-action{{if .LikeCount}} has-likes{{end}}"><svg class="like-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="currentColor"/></svg> {{.LikeCount}}</span>
-                </div>
-            </div>
-        </div>
+        {{template "post_card" .}}
+        {{end}}
+        {{end}}
+
+        {{if .Quotes}}
+        <h3 class="replies-title">Quotes</h3>
+        {{range .Quotes}}
+        {{template "post_card" .}}
         {{end}}
         {{end}}
     </div>

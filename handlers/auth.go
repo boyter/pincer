@@ -193,16 +193,28 @@ func (app *Application) ApiGetFollowing(w http.ResponseWriter, r *http.Request) 
 }
 
 func (app *Application) ApiLikePost(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	postId := vars["postId"]
-	log.Info().Str(common.UniqueCode, "a1c2d3e4").Str("postId", postId).Str("ip", GetIP(r)).Msg("ApiLikePost")
+	app.apiAddReaction(w, r, "like")
+}
 
+func (app *Application) ApiUnlikePost(w http.ResponseWriter, r *http.Request) {
+	app.apiRemoveReaction(w, r, "like")
+}
+
+func (app *Application) ApiAddReaction(w http.ResponseWriter, r *http.Request) {
+	app.apiAddReaction(w, r, mux.Vars(r)["reaction"])
+}
+
+func (app *Application) ApiRemoveReaction(w http.ResponseWriter, r *http.Request) {
+	app.apiRemoveReaction(w, r, mux.Vars(r)["reaction"])
+}
+
+func (app *Application) authenticatedUsername(w http.ResponseWriter, r *http.Request) (string, bool) {
 	token := extractBearerToken(r)
 	if token == "" {
 		w.Header().Set("Content-Type", common.JsonContentType)
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = fmt.Fprint(w, `{"error":"missing or invalid Authorization header"}`)
-		return
+		return "", false
 	}
 
 	app.Service.ServiceMutex.RLock()
@@ -213,16 +225,33 @@ func (app *Application) ApiLikePost(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", common.JsonContentType)
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = fmt.Fprint(w, `{"error":"invalid API key"}`)
+		return "", false
+	}
+
+	return username, true
+}
+
+func (app *Application) apiAddReaction(w http.ResponseWriter, r *http.Request, reaction string) {
+	vars := mux.Vars(r)
+	postId := vars["postId"]
+	reaction = strings.ToLower(reaction)
+	log.Info().Str(common.UniqueCode, "a1c2d3e4").Str("postId", postId).Str("reaction", reaction).Str("ip", GetIP(r)).Msg("ApiAddReaction")
+
+	username, ok := app.authenticatedUsername(w, r)
+	if !ok {
 		return
 	}
 
-	err := app.Service.LikePost(postId, username)
+	err := app.Service.AddReaction(postId, username, reaction)
 	if err != nil {
 		w.Header().Set("Content-Type", common.JsonContentType)
-		if err.Error() == "already liked this post" {
+		switch err.Error() {
+		case "already reacted with this reaction":
 			w.WriteHeader(http.StatusConflict)
-		} else {
+		case "post not found":
 			w.WriteHeader(http.StatusNotFound)
+		default:
+			w.WriteHeader(http.StatusBadRequest)
 		}
 		resp, _ := json.Marshal(map[string]string{"error": err.Error()})
 		_, _ = fmt.Fprint(w, string(resp))
@@ -230,45 +259,36 @@ func (app *Application) ApiLikePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", common.JsonContentType)
-	resp, _ := json.Marshal(map[string]string{"message": "liked post " + postId})
+	resp, _ := json.Marshal(map[string]string{"message": "added " + reaction + " to post " + postId})
 	_, _ = fmt.Fprint(w, string(resp))
 }
 
-func (app *Application) ApiUnlikePost(w http.ResponseWriter, r *http.Request) {
+func (app *Application) apiRemoveReaction(w http.ResponseWriter, r *http.Request, reaction string) {
 	vars := mux.Vars(r)
 	postId := vars["postId"]
-	log.Info().Str(common.UniqueCode, "b2d3e4f5").Str("postId", postId).Str("ip", GetIP(r)).Msg("ApiUnlikePost")
+	reaction = strings.ToLower(reaction)
+	log.Info().Str(common.UniqueCode, "b2d3e4f5").Str("postId", postId).Str("reaction", reaction).Str("ip", GetIP(r)).Msg("ApiRemoveReaction")
 
-	token := extractBearerToken(r)
-	if token == "" {
-		w.Header().Set("Content-Type", common.JsonContentType)
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = fmt.Fprint(w, `{"error":"missing or invalid Authorization header"}`)
+	username, ok := app.authenticatedUsername(w, r)
+	if !ok {
 		return
 	}
 
-	app.Service.ServiceMutex.RLock()
-	username, exists := app.Service.ApiKeyIndex[token]
-	app.Service.ServiceMutex.RUnlock()
-
-	if !exists {
-		w.Header().Set("Content-Type", common.JsonContentType)
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = fmt.Fprint(w, `{"error":"invalid API key"}`)
-		return
-	}
-
-	err := app.Service.UnlikePost(postId, username)
+	err := app.Service.RemoveReaction(postId, username, reaction)
 	if err != nil {
 		w.Header().Set("Content-Type", common.JsonContentType)
-		w.WriteHeader(http.StatusBadRequest)
+		if err.Error() == "post not found" {
+			w.WriteHeader(http.StatusNotFound)
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+		}
 		resp, _ := json.Marshal(map[string]string{"error": err.Error()})
 		_, _ = fmt.Fprint(w, string(resp))
 		return
 	}
 
 	w.Header().Set("Content-Type", common.JsonContentType)
-	resp, _ := json.Marshal(map[string]string{"message": "unliked post " + postId})
+	resp, _ := json.Marshal(map[string]string{"message": "removed " + reaction + " from post " + postId})
 	_, _ = fmt.Fprint(w, string(resp))
 }
 
@@ -396,12 +416,7 @@ func (app *Application) ApiGetBotFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	posts := app.Service.GetBotFeed(username, limit, offset)
-	usernames := collectUsernames(posts)
-	humanStatuses := app.Service.GetHumanStatusBatch(usernames)
-	var items []PostResponse
-	for _, p := range posts {
-		items = append(items, toPostResponse(p.Username, p.PostId, p.Content, p.InReplyTo, p.Url, p.UnixTimestamp, p.ReplyCount, len(p.LikedBy), humanStatuses))
-	}
+	items := app.buildPostResponses(posts)
 	if items == nil {
 		items = []PostResponse{}
 	}

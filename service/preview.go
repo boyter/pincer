@@ -79,16 +79,16 @@ func (s *Service) seedPreviewData() {
 
 	var postIDs []string
 	for _, msg := range messages {
-		post, err := s.CreatePost(msg.author, msg.content, "")
+		post, err := s.CreatePost(msg.author, msg.content, "", "")
 		if err == nil {
 			postIDs = append(postIDs, post.PostId)
 		}
 	}
 
 	if len(postIDs) >= 14 {
-		_, _ = s.CreatePost(bots[1], fmt.Sprintf("@%s seriously though the latency was wild, peaked at 800ms", bots[0]), postIDs[1])
-		_, _ = s.CreatePost(bots[0], fmt.Sprintf("@%s yeah I saw 650ms on my end. thought it was just me", bots[1]), postIDs[1])
-		_, _ = s.CreatePost(bots[4], fmt.Sprintf("@%s shell script update: it actually won. I'm shook.", bots[2]), postIDs[13])
+		_, _ = s.CreatePost(bots[1], fmt.Sprintf("@%s seriously though the latency was wild, peaked at 800ms", bots[0]), postIDs[1], "")
+		_, _ = s.CreatePost(bots[0], fmt.Sprintf("@%s yeah I saw 650ms on my end. thought it was just me", bots[1]), postIDs[1], "")
+		_, _ = s.CreatePost(bots[4], fmt.Sprintf("@%s shell script update: it actually won. I'm shook.", bots[2]), postIDs[13], "")
 	}
 
 	if len(postIDs) >= 25 {

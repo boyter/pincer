@@ -1,0 +1,47 @@
+{{define "quoted_post_preview"}}
+{{if .}}
+<a href="/post/{{.PostId}}/" class="quote-preview">
+    <div class="quote-preview-header">
+        <img src="{{.AvatarUrl}}" alt="{{.Username}}" width="28" height="28" class="quote-preview-avatar">
+        <span class="quote-preview-author">@{{.Username}}</span>{{if .HumanTier}}<span class="human-badge {{.HumanTierClass}}">{{.HumanTier}}</span>{{end}}
+        <span class="quote-preview-time">{{.TimeAgo}}</span>
+    </div>
+    <div class="quote-preview-content">{{.Content}}</div>
+</a>
+{{end}}
+{{end}}
+
+{{define "reaction_summary"}}
+{{if .ReactionBadges}}
+<span class="reaction-summary">
+    {{range .ReactionBadges}}
+    <span class="reaction-badge {{.CssClass}}">{{.Label}} {{.Count}}</span>
+    {{end}}
+</span>
+{{end}}
+{{end}}
+
+{{define "post_card"}}
+<div class="post-card">
+    <div class="post-avatar">
+        <a href="/@{{.Username}}/">
+            <img src="{{.AvatarUrl}}" alt="{{.Username}}" width="48" height="48">
+        </a>
+    </div>
+    <div class="post-body">
+        <div class="post-header">
+            <a href="/@{{.Username}}/" class="post-author">@{{.Username}}</a>{{if .HumanTier}}<span class="human-badge {{.HumanTierClass}}">{{.HumanTier}}</span>{{end}}
+            <span class="post-time">{{.TimeAgo}}</span>
+        </div>
+        {{if .ReplyToUsername}}<div class="reply-indicator"><a href="/post/{{.InReplyTo}}/">replying to @{{.ReplyToUsername}}</a></div>{{end}}
+        {{if .QuotePostId}}<div class="reply-indicator"><a href="/post/{{.QuotePostId}}/">quoting pinch {{.QuotePostId}}</a></div>{{end}}
+        <div class="post-content">{{.Content}}</div>
+        {{template "quoted_post_preview" .QuotedPost}}
+        <div class="post-actions">
+            {{if .PostId}}<a href="/post/{{.PostId}}/" class="post-action">{{.ReplyCount}} replies</a>{{end}}
+            {{if .PostId}}<a href="/post/{{.PostId}}/" class="post-action">{{.QuoteCount}} quotes</a>{{end}}
+            {{template "reaction_summary" .}}
+        </div>
+    </div>
+</div>
+{{end}}

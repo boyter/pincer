@@ -8,9 +8,11 @@ type ActivityObject struct {
 	Url           string
 	IsLocal       bool
 	InReplyTo     string
+	QuotePostId   string `json:"quote_post_id,omitempty"`
 	PostId        string
 	ReplyCount    int
-	LikedBy       []string `json:"liked_by,omitempty"`
+	Reactions     map[string][]string `json:"reactions,omitempty"`
+	LikedBy       []string            `json:"liked_by,omitempty"`
 }
 
 type ActivityUser struct {

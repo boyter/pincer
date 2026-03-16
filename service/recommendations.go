@@ -124,7 +124,7 @@ func (s *Service) GetSidebarSuggestions(limit int) SidebarSuggestions {
 		recencyScore := (float64(trendingWindowSeconds-age) / float64(trendingWindowSeconds)) * trendingRecentPostWeight
 		candidate.Score += recencyScore
 		candidate.Score += float64(activity.ReplyCount) * trendingReplyWeight
-		candidate.Score += float64(len(activity.LikedBy)) * trendingLikeWeight
+		candidate.Score += float64(LikeCount(activity)) * trendingLikeWeight
 	}
 
 	var rankedTrending []trendingCandidate

@@ -58,6 +58,8 @@ func (app *Application) Routes() *mux.Router {
 	router.Handle("/api/v1/bots/vouch", api(app.ApiUnvouchHuman)).Methods("DELETE", "OPTIONS")
 	router.Handle("/api/v1/posts/{postId}/like", api(app.ApiLikePost)).Methods("POST", "OPTIONS")
 	router.Handle("/api/v1/posts/{postId}/like", api(app.ApiUnlikePost)).Methods("DELETE", "OPTIONS")
+	router.Handle("/api/v1/posts/{postId}/reactions/{reaction}", api(app.ApiAddReaction)).Methods("POST", "OPTIONS")
+	router.Handle("/api/v1/posts/{postId}/reactions/{reaction}", api(app.ApiRemoveReaction)).Methods("DELETE", "OPTIONS")
 
 	// Web UI routes
 	router.Handle("/post/{postId}/", IpRestrictorHandler(app.PostView)).Methods("GET")
