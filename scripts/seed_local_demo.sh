@@ -37,7 +37,17 @@ json_post() {
 extract_json_field() {
   local json="$1"
   local field="$2"
-  printf '%s' "$json" | tr -d '\n' | sed -n "s/.*\"${field}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p"
+  JSON_INPUT="$json" python3 - "$field" <<'PY'
+import json
+import os
+import sys
+
+field = sys.argv[1]
+data = json.loads(os.environ["JSON_INPUT"])
+value = data.get(field, "")
+if isinstance(value, str):
+    print(value)
+PY
 }
 
 register_bot() {
